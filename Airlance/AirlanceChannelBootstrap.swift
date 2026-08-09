@@ -84,7 +84,17 @@ public final class AirlanceChannelBootstrap {
                 }
             }
 
-        return bootstrap.connect(host: host, port: port).flatMap { channel in
+        return bootstrap.connect(host: host, port: port).flatMapError { error in
+            // The TCP connect itself failed (DNS, connection refused,
+            // etc.) — nothing was ever added to a pipeline, so
+            // `HandshakeAwaiter` never got a chance to resolve
+            // `handshakePromise`. Fail it here explicitly so it's never
+            // left dangling (NIO's debug builds fatalError on a leaked
+            // promise — see `EventLoopPromise`'s leak detector), and
+            // propagate the original connect error to the caller.
+            handshakePromise.fail(error)
+            return self.eventLoopGroup.next().makeFailedFuture(error)
+        }.flatMap { channel in
             // Wait for the handshake to actually finish before handing the
             // channel back — a caller that immediately tries to open an
             // HTTP/2 stream needs the secure channel already active.

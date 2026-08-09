@@ -25,8 +25,8 @@ macos_application(
     deps = [":AirlanceMacOS"],
     resources = [
         "Airlance/Resource/Base.lproj/MainMenu.xib",
-        "Airlance/Resource/Assets.xcassets",
-    ],
+        "Airlance/wireauth_server_public_key.pem",
+    ] + glob(["Airlance/Resource/Assets.xcassets/**"]),
     visibility = ["//visibility:public"],
 )
 

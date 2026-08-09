@@ -1,6 +1,5 @@
 import CryptoKit
 import NIOCore
-import NIOFoundationCompat
 import Security
 import Foundation
 
@@ -36,6 +35,15 @@ import Foundation
 /// which `AirlanceChannelBootstrap` turns into a connection-level error
 /// so grpc-swift's `ClientConnection` reports it the same way it would
 /// report a TLS handshake failure.
+// Safe because every mutable stored property is only ever touched on
+// the single EventLoop this handler is bound to (NIO's own contract for
+// ChannelHandler): `channelActive`/`channelRead`/etc. all run there, and
+// every `loop.execute { ... }` callback below is scheduled back onto
+// that same loop before touching `self`. There is no concurrent access
+// in practice — Swift just can't see across the `loop.execute` boundary
+// to prove it.
+extension WireAuthChannelHandler: @unchecked Sendable {}
+
 public final class WireAuthChannelHandler: ChannelDuplexHandler {
     public typealias InboundIn = ByteBuffer
     public typealias InboundOut = ByteBuffer
@@ -100,6 +108,15 @@ public final class WireAuthChannelHandler: ChannelDuplexHandler {
         state = .handshaking
         let loop = context.eventLoop
 
+        // `ChannelHandlerContext` is not Sendable (NIO's contract is
+        // "only ever touch it on its own EventLoop", not "safe from any
+        // thread"), so it can't cross the `Task { ... }` boundary below
+        // as-is. `NIOLoopBound` is NIO's own escape hatch for exactly
+        // this: a Sendable wrapper that asserts (at runtime) every
+        // access happens on the loop it was created with — which is
+        // true here, since every use below is inside `loop.execute`.
+        let loopBoundContext = NIOLoopBound(context, eventLoop: loop)
+
         // WireAuthClientHandshake.run is async; bridge it onto the NIO
         // event loop via a Task, funneling all socket I/O back through
         // this handler's write/read primitives so everything still runs
@@ -109,18 +126,18 @@ public final class WireAuthChannelHandler: ChannelDuplexHandler {
                 let result = try await WireAuthClientHandshake.run(
                     serverPublicKey: self.serverPublicKey,
                     write: { data in
-                        try await self.handshakeWrite(context: context, loop: loop, data: data)
+                        try await self.handshakeWrite(loopBoundContext: loopBoundContext, loop: loop, data: data)
                     },
                     readExactly: { length in
-                        try await self.handshakeRead(context: context, loop: loop, length: length)
+                        try await self.handshakeRead(loopBoundContext: loopBoundContext, loop: loop, length: length)
                     }
                 )
                 loop.execute {
-                    self.completeHandshake(context: context, result: result)
+                    self.completeHandshake(context: loopBoundContext.value, result: result)
                 }
             } catch {
                 loop.execute {
-                    self.failSecureChannel(context: context, error: error)
+                    self.failSecureChannel(context: loopBoundContext.value, error: error)
                 }
             }
         }
@@ -129,9 +146,10 @@ public final class WireAuthChannelHandler: ChannelDuplexHandler {
     /// Writes raw (unencrypted-by-this-layer) handshake bytes directly to
     /// the socket, hopping onto the event loop to touch the channel
     /// safely from the async Task above.
-    private func handshakeWrite(context: ChannelHandlerContext, loop: EventLoop, data: Data) async throws {
+    private func handshakeWrite(loopBoundContext: NIOLoopBound<ChannelHandlerContext>, loop: EventLoop, data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             loop.execute {
+                let context = loopBoundContext.value
                 var buffer = context.channel.allocator.buffer(capacity: data.count)
                 buffer.writeBytes(data)
                 context.writeAndFlush(self.wrapOutboundOut(buffer)).whenComplete { result in
@@ -151,7 +169,7 @@ public final class WireAuthChannelHandler: ChannelDuplexHandler {
     /// calls (TCP has no message boundaries), so this waits on
     /// `inboundAccumulator` filling up via the continuation stashed in
     /// `handshakeReadContinuation`.
-    private func handshakeRead(context: ChannelHandlerContext, loop: EventLoop, length: Int) async throws -> Data {
+    private func handshakeRead(loopBoundContext: NIOLoopBound<ChannelHandlerContext>, loop: EventLoop, length: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             loop.execute {
                 if let ready = self.tryDrainHandshakeBytes(length: length) {

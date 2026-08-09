@@ -65,7 +65,7 @@ public actor AirlanceClient {
     // MARK: - LoginByGithub
 
     public func loginByGithub(code: String, clientCtx: authv1_ClientContextT?) async throws -> authv1_LoginByGithubResponseT {
-        var value = authv1_LoginByGithubRequestT()
+        let value = authv1_LoginByGithubRequestT()
         value.code = code
         value.clientCtx = clientCtx
         let response: LoginByGithubResponse = try await unaryCall(
@@ -78,7 +78,7 @@ public actor AirlanceClient {
     // MARK: - ResumeSession
 
     public func resumeSession(authKeyID: UInt64, resumeSecret: String) async throws -> authv1_ResumeSessionResponseT {
-        var value = authv1_ResumeSessionRequestT()
+        let value = authv1_ResumeSessionRequestT()
         value.authKeyId = authKeyID
         value.resumeSecret = resumeSecret
         let response: ResumeSessionResponse = try await unaryCall(
@@ -95,7 +95,7 @@ public actor AirlanceClient {
     /// — see `performCall`), not as a request field — matches the Go
     /// server's handler, which reads it off `contextx.GetUser`.
     public func terminateSession(reason: String, authKeyID: UInt64) async throws -> authv1_TerminateSessionResponseT {
-        var value = authv1_TerminateSessionRequestT()
+        let value = authv1_TerminateSessionRequestT()
         value.reason = reason
         let response: TerminateSessionResponse = try await unaryCall(
             path: "/authv1.AuthService/TerminateSession",
@@ -132,7 +132,7 @@ public actor AirlanceClient {
     /// the target belongs to the caller's user before revoking it —
     /// see the Go usecase's ownership check.
     public func killSession(targetAuthKeyID: UInt64, authKeyID: UInt64) async throws -> authv1_KillSessionResponseT {
-        var value = authv1_KillSessionRequestT()
+        let value = authv1_KillSessionRequestT()
         value.authKeyId = targetAuthKeyID
         let response: KillSessionResponse = try await unaryCall(
             path: "/authv1.AuthService/KillSession",
@@ -145,7 +145,7 @@ public actor AirlanceClient {
     // MARK: - QR login
 
     public func generateQRLogin(clientCtx: authv1_ClientContextT?) async throws -> authv1_GenerateQRLoginResponseT {
-        var value = authv1_GenerateQRLoginRequestT()
+        let value = authv1_GenerateQRLoginRequestT()
         value.clientCtx = clientCtx
         let response: GenerateQRLoginResponse = try await unaryCall(
             path: "/authv1.AuthService/GenerateQRLogin",
@@ -155,7 +155,7 @@ public actor AirlanceClient {
     }
 
     public func scanQRLogin(token: String) async throws -> authv1_ScanQRLoginResponseT {
-        var value = authv1_ScanQRLoginRequestT()
+        let value = authv1_ScanQRLoginRequestT()
         value.token = token
         let response: ScanQRLoginResponse = try await unaryCall(
             path: "/authv1.AuthService/ScanQRLogin",
@@ -169,7 +169,7 @@ public actor AirlanceClient {
     /// from the blanket auth interceptor but still authenticates the
     /// caller by hand via the same `x-auth-key-id` metadata key.
     public func confirmQRLogin(token: String, authKeyID: UInt64) async throws -> authv1_ConfirmQRLoginResponseT {
-        var value = authv1_ConfirmQRLoginRequestT()
+        let value = authv1_ConfirmQRLoginRequestT()
         value.token = token
         let response: ConfirmQRLoginResponse = try await unaryCall(
             path: "/authv1.AuthService/ConfirmQRLogin",
@@ -180,7 +180,7 @@ public actor AirlanceClient {
     }
 
     public func rejectQRLogin(token: String) async throws -> authv1_RejectQRLoginResponseT {
-        var value = authv1_RejectQRLoginRequestT()
+        let value = authv1_RejectQRLoginRequestT()
         value.token = token
         let response: RejectQRLoginResponse = try await unaryCall(
             path: "/authv1.AuthService/RejectQRLogin",
@@ -215,7 +215,7 @@ public actor AirlanceClient {
     /// cancelled wait would leak an open RPC on both client and server
     /// until the token's own expiry closed it.
     public func waitQRLoginResult(token: String) async -> AsyncThrowingStream<authv1_QRLoginEventT, Error> {
-        var value = authv1_WaitQRLoginResultRequestT()
+        let value = authv1_WaitQRLoginResultRequestT()
         value.token = token
         let request = WaitQRLoginResultRequest(value)
 
@@ -353,8 +353,9 @@ public actor AirlanceClient {
         }
 
         let framedBody = GRPCMessageFraming.frame(FlatbuffersCodec.encode(request))
-        var bodyBuffer = channel.allocator.buffer(capacity: framedBody.count)
-        bodyBuffer.writeBytes(framedBody)
+        var mutableBodyBuffer = channel.allocator.buffer(capacity: framedBody.count)
+        mutableBodyBuffer.writeBytes(framedBody)
+        let bodyBuffer = mutableBodyBuffer
 
         let requestHead = AirlanceStreamHandler.RequestHead(path: path, authority: authority)
 

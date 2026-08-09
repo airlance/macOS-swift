@@ -6,10 +6,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @IBOutlet var window: NSWindow!
 
-    private let serverHost = "REPLACE_WITH_SERVER_HOST"
+    private let serverHost = "http://grpc.localhost/"
     private let serverPort = 9090
     private let githubClientID = "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID"
-    private let githubRedirectURI = URL(string: "https://REPLACE_WITH_SERVER_HOST/auth/github/callback")!
+    private let githubRedirectURI = URL(string: "http://api.localhost/auth/github/callback")!
 
     private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     private var airlanceClient: AirlanceClient?
