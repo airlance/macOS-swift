@@ -1,0 +1,34 @@
+load("@build_bazel_rules_apple//apple:macos.bzl", "macos_application")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@rules_xcodeproj//xcodeproj:defs.bzl", "xcodeproj")
+
+
+swift_library(
+    name = "AirlanceMacOS",
+    srcs = ["Airlance/AppDelegate.swift"],
+    module_name = "Airlance",
+    deps = [
+        "//submodules/WireAuth:WireAuth",
+    ],
+)
+
+macos_application(
+    name = "Airlance",
+    bundle_id = "com.airlance.macOS",
+    infoplists = ["Info.plist"],
+    minimum_os_version = "14.0",
+    deps = [":AirlanceMacOS"],
+    resources = [
+        "Airlance/Resource/MainMenu.xib",
+        "Airlance/Resource/Assets.xcassets",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+xcodeproj(
+    name = "xcodeproj",
+    project_name = "Airlance",
+    top_level_targets = [
+        ":Airlance",
+    ],
+)
