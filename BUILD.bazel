@@ -5,7 +5,7 @@ load("@rules_xcodeproj//xcodeproj:defs.bzl", "xcodeproj")
 
 swift_library(
     name = "AirlanceMacOS",
-    srcs = ["Airlance/AppDelegate.swift"],
+    srcs = glob(["Airlance/**/*.swift"]),
     module_name = "Airlance",
     deps = [
         "//submodules/WireAuth:WireAuth",
@@ -15,11 +15,11 @@ swift_library(
 macos_application(
     name = "Airlance",
     bundle_id = "com.airlance.macOS",
-    infoplists = ["Info.plist"],
+    infoplists = ["Airlance/Resource/Info.plist"],
     minimum_os_version = "14.0",
     deps = [":AirlanceMacOS"],
     resources = [
-        "Airlance/Resource/MainMenu.xib",
+        "Airlance/Resource/Base.lproj/MainMenu.xib",
         "Airlance/Resource/Assets.xcassets",
     ],
     visibility = ["//visibility:public"],
