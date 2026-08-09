@@ -1,0 +1,12 @@
+[submodule "third-party/swift-nio/swift-nio"]
+	path = third-party/swift-nio/swift-nio
+	url = https://github.com/apple/swift-nio.git
+[submodule "third-party/swift-collections/swift-collections"]
+	path = third-party/swift-collections/swift-collections
+	url = https://github.com/apple/swift-collections.git
+[submodule "third-party/swift-atomics/swift-atomics"]
+	path = third-party/swift-atomics/swift-atomics
+	url = https://github.com/apple/swift-atomics.git
+[submodule "third-party/swift-nio-http2/swift-nio-http2"]
+	path = third-party/swift-nio-http2/swift-nio-http2
+	url = https://github.com/apple/swift-nio-http2.git

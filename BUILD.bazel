@@ -9,6 +9,11 @@ swift_library(
     module_name = "Airlance",
     deps = [
         "//submodules/WireAuth:WireAuth",
+        "//submodules/FlatBuffers:FlatBuffers",
+        "//third-party/swift-nio-http2:NIOHTTP2",
+        "//third-party/swift-nio:NIOCore",
+        "//third-party/swift-nio:NIOPosix",
+        "//third-party/swift-nio:NIOFoundationCompat",
     ],
 )
 

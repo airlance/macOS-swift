@@ -6,7 +6,7 @@ module(
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 bazel_dep(name = "rules_apple", version = "4.4.0", repo_name = "build_bazel_rules_apple")
-bazel_dep(name = "rules_swift", version = "3.5.0", repo_name = "build_bazel_rules_swift")
+bazel_dep(name = "rules_swift", version = "3.6.0", repo_name = "build_bazel_rules_swift")
 bazel_dep(name = "rules_xcodeproj", version = "4.1.0")
 
 http_file(
