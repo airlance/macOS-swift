@@ -16,52 +16,50 @@
 
 import Foundation
 
-enum FlatbuffersGRPCError: Error {
-  case finishedNotCalledOnBuilder
-}
+/// FlatBufferGRPCMessage protocol that should allow us to invoke
+/// initializers directly from the GRPC generated code
+public protocol FlatBufferGRPCMessage {
+  /// Size of readable bytes in the buffer
+  var size: Int { get }
 
-public protocol GRPCVerifiableMessage<Message> {
-  associatedtype Message
-
-  init(pointer: UnsafeRawBufferPointer)
   init(byteBuffer: ByteBuffer)
 
-  func decode() throws -> Message
-  func withUnsafeReadableBytes<Data>(
+  @discardableResult
+  @inline(__always)
+  func withUnsafeReadableBytes<T>(
     _ body: (UnsafeRawBufferPointer) throws
-      -> Data) rethrows -> Data
+      -> T) rethrows -> T
 }
 
-public struct GRPCMessage<
-  Table: FlatBufferVerifiableTable
->: Sendable, GRPCVerifiableMessage {
-  public typealias Message = Table
+/// Message is a wrapper around Buffers to to able to send Flatbuffers `Buffers` through the
+/// GRPC library
+public struct Message<T: FlatBufferTable>: FlatBufferGRPCMessage {
+  internal var buffer: ByteBuffer
 
-  private let buffer: ByteBuffer
+  /// Returns the an object of type T that would be  read from the buffer
+  public var object: T {
+    T.init(
+      buffer,
+      o: Int32(buffer.read(def: UOffset.self, position: buffer.reader)) &+
+        Int32(buffer.reader))
+  }
 
   public var size: Int { Int(buffer.size) }
 
-  public init(pointer: UnsafeRawBufferPointer) {
-    buffer = ByteBuffer(
-      copyingMemoryBound: pointer.baseAddress!,
-      capacity: pointer.count)
-  }
-
-  public init(builder: inout FlatBufferBuilder) throws {
-    guard builder.finished else {
-      throw FlatbuffersGRPCError.finishedNotCalledOnBuilder
-    }
-
-    buffer = builder.sizedBuffer
-  }
-
+  /// Initializes the message with the type Flatbuffer.Bytebuffer that is transmitted over
+  /// GRPC
+  /// - Parameter byteBuffer: Flatbuffer ByteBuffer object
   public init(byteBuffer: ByteBuffer) {
     buffer = byteBuffer
   }
 
-  public func decode() throws -> Table {
-    var buf = buffer
-    return try getCheckedRoot(byteBuffer: &buf)
+  /// Initializes the message by copying the buffer to the message to be sent.
+  /// from the builder
+  /// - Parameter builder: FlatbufferBuilder that has the bytes created in
+  /// - Note: Use  `builder.finish(offset)` before passing the builder without prefixing anything to it
+  public init(builder: inout FlatBufferBuilder) {
+    buffer = builder.sizedBuffer
+    builder.clear()
   }
 
   @discardableResult
@@ -73,32 +71,5 @@ public struct GRPCMessage<
     return try buffer.readWithUnsafeRawPointer(position: buffer.reader) {
       try body(UnsafeRawBufferPointer(start: $0, count: size))
     }
-  }
-}
-
-@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-public struct FlatBuffersMessageSerializer<
-  Message: GRPCVerifiableMessage
->: Sendable {
-  public init() {}
-
-  public func serialize<Data>(
-    message: Message,
-    _ completion: (UnsafeRawBufferPointer) throws -> Data) throws -> Data
-  {
-    return try message.withUnsafeReadableBytes {
-      try completion($0)
-    }
-  }
-}
-
-@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-public struct FlatBuffersMessageDeserializer<
-  Message: GRPCVerifiableMessage
->: Sendable {
-  public init() {}
-
-  public func deserialize(pointer: UnsafeRawBufferPointer) throws -> Message {
-    Message.init(pointer: pointer)
   }
 }

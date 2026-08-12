@@ -56,15 +56,8 @@ extension Verifiable {
     let len: UOffset = try verifier.getValue(at: position)
     let intLen = Int(len)
     let start = Int(clamping: (position &+ MemoryLayout<Int32>.size).magnitude)
-    let byteCount = intLen.multipliedReportingOverflow(
-      by: MemoryLayout<T>.size)
-    guard !byteCount.overflow else {
-      throw FlatbuffersErrors.outOfBounds(
-        position: UInt.max,
-        end: verifier.capacity)
-    }
     try verifier.isAligned(position: start, type: type.self)
-    try verifier.rangeInBuffer(position: start, size: byteCount.partialValue)
+    try verifier.rangeInBuffer(position: start, size: intLen)
     return (start, intLen)
   }
 }

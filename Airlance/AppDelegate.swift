@@ -2,71 +2,102 @@ import AirlanceClient
 import Cocoa
 
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    // Outlet остаётся совместимым с существующим MainMenu.xib.
+    @IBOutlet private var window: NSWindow!
 
-    @IBOutlet var window: NSWindow!
-
-    let client = AirlanceClient(config: .init(
-        host: "localhost", port: 8080,
+    private let client = AirlanceClient(config: .init(
+        host: "localhost",
+        port: 8080,
         serverStaticPublicKeyHex: "ad4fa9c11c2d35f17e56a5101cd57c782415cac6cbfddc65a91ede97252de127"
     ))
 
-    func applicationDidFinishLaunching(_ aNotification: Notification) {
-        Task {
+    private var authCoordinator: AuthCoordinator!
+    private var authWindowController: AuthWindowController?
+    private var mainWindowController: NSWindowController?
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        window?.orderOut(nil)
+
+        authCoordinator = AuthCoordinator(
+            client: client,
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            appVersion: appVersion,
+            githubHTTPScheme: "http", // В production заменить на https.
+            githubHTTPPort: 8081
+        )
+
+        let authWindow = AuthWindowController(coordinator: authCoordinator)
+        authWindow.onAuthenticated = { [weak self] session in
+            self?.showAuthenticatedApp(session: session)
+        }
+        authWindowController = authWindow
+        authWindow.showWindow(nil)
+        authWindow.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 try await client.connect()
-                print("connected ok")
-
-                if let session = try await client.establishSession() {
-                    print("resumed:", session.sessionID)
-                    return
-                }
-
-                // Ничего не сохранено локально — устройство ещё не привязано
-                // ни к одному аккаунту. Тут можно предложить пользователю
-                // выбор: email OTP или "Sign in with GitHub".
-                //
-                // GitHub-ветка:
-                let session = try await client.signInWithGithub(
-                    httpScheme: "http",       // "https" в проде
-                    httpPort: 8081,           // порт HTTP-сервера (cfg.HTTP.Addr), если не 80/443
-                    osVersion: "15.1",
-                    appVersion: "0.1.0"
-                )
-                print("signed in via github:", session.sessionID)
-
-                // Email OTP-ветка (как было раньше) — альтернативный путь:
-                // let accountID = try await client.auth!.registerAccount(
-                //     email: "you@example.com", firstName: "Yura", lastName: "K"
-                // )
-                // let session = try await client.auth!.confirmEmailCode(
-                //     accountID: accountID, code: "123456",
-                //     deviceFingerprint: "unique-per-install-id",
-                //     deviceName: "Yura's Mac", osVersion: "15.1", appVersion: "0.1.0"
-                // )
-                // try client.persistSession(session)
+                _ = await authCoordinator.tryRestoreSession()
             } catch {
-                print("airlance error:", error)
-                print("airlance error (debug):", String(reflecting: error))
+                authWindow.showConnectionError(Self.connectionMessage(for: error))
             }
         }
     }
 
-    /// Ловит `airlance://auth/callback?...` после того, как GitHub OAuth
-    /// в системном браузере завершился редиректом на наш custom URL scheme.
-    /// Требует регистрации `CFBundleURLTypes` в Info.plist (см. ниже).
+    /// Получает callback `airlance://auth/callback` от системного браузера.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             Task { await client.handleOpenURL(url) }
         }
     }
 
-    func applicationWillTerminate(_ aNotification: Notification) {
-        // Insert code here to tear down your application
+    func applicationWillTerminate(_ notification: Notification) {
+        client.close()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        return true
+        true
     }
 
+    private func showAuthenticatedApp(session: AuthSession) {
+        authWindowController?.close()
+
+        let viewController = AuthenticatedViewController(session: session)
+        viewController.onLogout = { [weak self] in
+            self?.logout()
+        }
+
+        let mainWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        mainWindow.title = "Airlance"
+        mainWindow.contentViewController = viewController
+        mainWindow.center()
+        mainWindowController = NSWindowController(window: mainWindow)
+        mainWindowController?.showWindow(nil)
+        mainWindow.makeKeyAndOrderFront(nil)
+    }
+
+    private func logout() {
+        client.forgetSession()
+        mainWindowController?.close()
+        mainWindowController = nil
+        authCoordinator.backToEmailEntry()
+        authWindowController?.showWindow(nil)
+    }
+
+    private static func connectionMessage(for error: Error) -> String {
+        "Не удалось подключиться к серверу: \(error.localizedDescription)"
+    }
 }

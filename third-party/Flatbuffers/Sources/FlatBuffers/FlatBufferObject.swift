@@ -18,9 +18,7 @@ import Foundation
 
 /// NativeStruct is a protocol that indicates if the struct is a native `swift` struct
 /// since now we will be serializing native structs into the buffer.
-public protocol NativeStruct: BitwiseCopyable {}
-
-public protocol FlatBufferVerifiableNativeStruct: NativeStruct, Verifiable {}
+public protocol NativeStruct {}
 
 /// FlatbuffersInitializable is a protocol that allows any object to be
 /// Initialized from a ByteBuffer
@@ -36,8 +34,6 @@ public protocol FlatBufferTable: FlatbuffersInitializable,
 {
   var __buffer: ByteBuffer! { get }
 }
-
-public protocol FlatBufferVerifiableTable: FlatBufferTable, Verifiable {}
 
 /// FlatbufferStruct structures all the Flatbuffers structs
 public protocol FlatBufferStruct: FlatbuffersInitializable,

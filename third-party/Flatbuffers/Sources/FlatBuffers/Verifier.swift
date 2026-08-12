@@ -163,7 +163,7 @@ public struct Verifier {
   /// - Parameter position: Current position to be read
   /// - Throws: `inBuffer` errors
   /// - Returns: a value of type `T` usually a `VTable` or a table offset
-  internal func getValue<T: BitwiseCopyable>(at position: Int) throws -> T {
+  internal func getValue<T>(at position: Int) throws -> T {
     try inBuffer(position: position, of: T.self)
     return _buffer.read(def: T.self, position: position)
   }
@@ -215,16 +215,12 @@ public struct Verifier {
   }
 
   @inline(__always)
-  func verify(id: String, at position: Int) throws {
+  func verify(id: String) throws {
     let size = MemoryLayout<Int32>.size
-    guard
-      position >= 0,
-      position <= storage.capacity,
-      storage.capacity - position >= size &* 2
-    else {
+    guard storage.capacity >= (size &* 2) else {
       throw FlatbuffersErrors.bufferDoesntContainID
     }
-    let str = _buffer.readString(at: position &+ size, count: size)
+    let str = _buffer.readString(at: size, count: size)
     if id == str {
       return
     }

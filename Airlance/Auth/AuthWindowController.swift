@@ -34,6 +34,7 @@ final class AuthWindowController: NSWindowController {
         coordinator.onStepChanged = { [weak self] step in
             self?.render(step)
         }
+        render(coordinator.step)
     }
 
     @available(*, unavailable)
@@ -76,6 +77,11 @@ final class AuthWindowController: NSWindowController {
         case .authenticated(let session):
             onAuthenticated?(session)
         }
+    }
+
+    func showConnectionError(_ message: String) {
+        emailStep.showError(message)
+        render(.emailEntry)
     }
 
     // MARK: - Actions
@@ -128,7 +134,7 @@ final class AuthWindowController: NSWindowController {
         otpStep.setLoading(true)
         Task {
             do {
-                try await coordinator.resendCode(firstName: "", lastName: "")
+                try await coordinator.resendCode()
             } catch let error as AuthUIError {
                 otpStep.showError(error.message)
             } catch {

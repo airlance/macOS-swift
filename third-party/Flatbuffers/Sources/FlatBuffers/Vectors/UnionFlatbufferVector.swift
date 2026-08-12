@@ -49,8 +49,8 @@ public struct UnionFlatbufferVector {
 
   public subscript(
     position: Int,
-    Type: any FlatbuffersVectorInitializable
-      .Type) -> any FlatbuffersVectorInitializable
+    Type: FlatbuffersVectorInitializable
+      .Type) -> FlatbuffersVectorInitializable
   {
     guard position < count else {
       fatalError(

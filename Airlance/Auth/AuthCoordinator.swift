@@ -75,6 +75,8 @@ final class AuthCoordinator {
     /// ввода пользователем.
     private var lastRegisteredEmail: String?
     private var lastRegisteredAccountID: UInt64?
+    private var lastRegisteredFirstName = ""
+    private var lastRegisteredLastName = ""
 
     init(
         client: AirlanceClient,
@@ -119,6 +121,8 @@ final class AuthCoordinator {
             let accountID = try await auth.registerAccount(email: email, firstName: firstName, lastName: lastName)
             lastRegisteredEmail = email
             lastRegisteredAccountID = accountID
+            lastRegisteredFirstName = firstName
+            lastRegisteredLastName = lastName
             step = .otpEntry(email: email, accountID: accountID)
         } catch {
             throw Self.mapError(error)
@@ -127,11 +131,15 @@ final class AuthCoordinator {
 
     /// Повторно запрашивает код для email текущего шага `otpEntry`, не
     /// покидая экран ввода кода.
-    func resendCode(firstName: String, lastName: String) async throws {
+    func resendCode() async throws {
         guard let email = lastRegisteredEmail else {
             throw AuthUIError.notConnected
         }
-        try await requestEmailCode(email: email, firstName: firstName, lastName: lastName)
+        try await requestEmailCode(
+            email: email,
+            firstName: lastRegisteredFirstName,
+            lastName: lastRegisteredLastName
+        )
     }
 
     /// Шаг 2 -> подтверждает введённый код. При успехе сохраняет сессию в
@@ -141,7 +149,7 @@ final class AuthCoordinator {
         guard case .otpEntry(_, let accountID) = step else { return }
 
         do {
-            let fingerprint = try DeviceIdentityBridge.fingerprint()
+            let fingerprint = try client.deviceFingerprint()
             let session = try await auth.confirmEmailCode(
                 accountID: accountID,
                 code: code,
@@ -161,6 +169,8 @@ final class AuthCoordinator {
     func backToEmailEntry() {
         lastRegisteredEmail = nil
         lastRegisteredAccountID = nil
+        lastRegisteredFirstName = ""
+        lastRegisteredLastName = ""
         step = .emailEntry
     }
 
@@ -219,26 +229,5 @@ final class AuthCoordinator {
             }
         }
         return .network(String(describing: error))
-    }
-}
-
-/// Тонкая обёртка, чтобы координатор не тянул `DeviceIdentity` напрямую
-/// (internal-тип пакета) — fingerprint уже публичный на `AirlanceClient`
-/// нет, поэтому дублируем минимально нужное здесь через тот же Keychain
-/// service/account, что и SDK, чтобы значения совпадали.
-enum DeviceIdentityBridge {
-    static func fingerprint() throws -> String {
-        // `AirlanceClient.swift` не выставляет fingerprint публично сам по
-        // себе (он используется внутри `signInWithGithub`), а `AuthClient`
-        // ожидает его как параметр `confirmEmailCode`. Простейший стабильный
-        // источник, доступный отсюда без правки SDK, — тот же UUID подход,
-        // хранимый в UserDefaults на уровне приложения.
-        let key = "com.airlance.client.app.deviceFingerprint"
-        if let existing = UserDefaults.standard.string(forKey: key) {
-            return existing
-        }
-        let value = UUID().uuidString
-        UserDefaults.standard.set(value, forKey: key)
-        return value
     }
 }

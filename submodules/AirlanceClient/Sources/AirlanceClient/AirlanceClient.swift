@@ -64,6 +64,13 @@ public final class AirlanceClient {
         return HexCodec.encode([UInt8](key.publicKey.rawRepresentation))
     }
 
+    /// Стабильный идентификатор установки, общий для email OTP и GitHub OAuth.
+    /// Оба auth-flow должны передавать серверу один и тот же fingerprint,
+    /// иначе одна и та же машина будет зарегистрирована как два устройства.
+    public func deviceFingerprint() throws -> String {
+        try DeviceIdentity.fingerprint()
+    }
+
     /// Auth-клиент (email OTP flow) поверх текущего `noiseConn`. `nil` пока
     /// `connect()` не был вызван успешно.
     public var auth: AuthClient? {

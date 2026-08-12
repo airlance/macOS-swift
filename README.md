@@ -1,5 +1,5 @@
 ```
-git clone --recurse-submodules -j8 <url-вашего-репо>
+git clone --recurse-submodules -j8 https:
 ```
 ```
 bazel build //:Airlance

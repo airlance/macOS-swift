@@ -30,7 +30,7 @@ struct _InternalByteBuffer {
   @usableFromInline
   final class Storage {
     /// pointer to the start of the buffer object in memory
-    @exclusivity(unchecked) private(set) var memory: UnsafeMutableRawPointer
+    private(set) var memory: UnsafeMutableRawPointer
 
     @usableFromInline
     init(count: Int, alignment: Int) {
@@ -146,7 +146,7 @@ struct _InternalByteBuffer {
   #if !os(WASI)
   @inline(__always)
   @usableFromInline
-  mutating func push(bytes: any ContiguousBytes) {
+  mutating func push(bytes: ContiguousBytes) {
     bytes.withUnsafeBytes { ptr in
       ensureSpace(size: ptr.count)
       memcpy(
@@ -333,7 +333,6 @@ struct _InternalByteBuffer {
 
   @discardableResult
   @inline(__always)
-  @usableFromInline
   func readWithUnsafeRawPointer<T>(
     position: Int,
     _ body: (UnsafeRawPointer) throws -> T) rethrows -> T
