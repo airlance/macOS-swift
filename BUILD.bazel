@@ -8,12 +8,7 @@ swift_library(
     srcs = glob(["Airlance/**/*.swift"]),
     module_name = "Airlance",
     deps = [
-        "//submodules/WireAuth:WireAuth",
-        "//submodules/FlatBuffers:FlatBuffers",
-        "//third-party/swift-nio-http2:NIOHTTP2",
-        "//third-party/swift-nio:NIOCore",
-        "//third-party/swift-nio:NIOPosix",
-        "//third-party/swift-nio:NIOFoundationCompat",
+        "//submodules/AirlanceClient:AirlanceClient",
     ],
 )
 
@@ -25,7 +20,6 @@ macos_application(
     deps = [":AirlanceMacOS"],
     resources = [
         "Airlance/Resource/Base.lproj/MainMenu.xib",
-        "Airlance/wireauth_server_public_key.pem",
     ] + glob(["Airlance/Resource/Assets.xcassets/**"]),
     visibility = ["//visibility:public"],
 )

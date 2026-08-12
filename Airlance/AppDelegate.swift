@@ -1,96 +1,72 @@
+import AirlanceClient
 import Cocoa
-import NIOPosix
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     @IBOutlet var window: NSWindow!
 
-    private let serverHost = "http://grpc.localhost/"
-    private let serverPort = 9090
-    private let githubClientID = "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID"
-    private let githubRedirectURI = URL(string: "http://api.localhost/auth/github/callback")!
-
-    private let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-    private var airlanceClient: AirlanceClient?
-    private var loginViewController: LoginViewController?
+    let client = AirlanceClient(config: .init(
+        host: "localhost", port: 8080,
+        serverStaticPublicKeyHex: "ad4fa9c11c2d35f17e56a5101cd57c782415cac6cbfddc65a91ede97252de127"
+    ))
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        Task { @MainActor in
-            await presentLoginFlow()
+        Task {
+            do {
+                try await client.connect()
+                print("connected ok")
+
+                if let session = try await client.establishSession() {
+                    print("resumed:", session.sessionID)
+                    return
+                }
+
+                // Ничего не сохранено локально — устройство ещё не привязано
+                // ни к одному аккаунту. Тут можно предложить пользователю
+                // выбор: email OTP или "Sign in with GitHub".
+                //
+                // GitHub-ветка:
+                let session = try await client.signInWithGithub(
+                    httpScheme: "http",       // "https" в проде
+                    httpPort: 8081,           // порт HTTP-сервера (cfg.HTTP.Addr), если не 80/443
+                    osVersion: "15.1",
+                    appVersion: "0.1.0"
+                )
+                print("signed in via github:", session.sessionID)
+
+                // Email OTP-ветка (как было раньше) — альтернативный путь:
+                // let accountID = try await client.auth!.registerAccount(
+                //     email: "you@example.com", firstName: "Yura", lastName: "K"
+                // )
+                // let session = try await client.auth!.confirmEmailCode(
+                //     accountID: accountID, code: "123456",
+                //     deviceFingerprint: "unique-per-install-id",
+                //     deviceName: "Yura's Mac", osVersion: "15.1", appVersion: "0.1.0"
+                // )
+                // try client.persistSession(session)
+            } catch {
+                print("airlance error:", error)
+                print("airlance error (debug):", String(reflecting: error))
+            }
+        }
+    }
+
+    /// Ловит `airlance://auth/callback?...` после того, как GitHub OAuth
+    /// в системном браузере завершился редиректом на наш custom URL scheme.
+    /// Требует регистрации `CFBundleURLTypes` в Info.plist (см. ниже).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            Task { await client.handleOpenURL(url) }
         }
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        try? eventLoopGroup.syncShutdownGracefully()
-    }
-
-    @MainActor
-    private func presentLoginFlow() async {
-        guard let serverPublicKey = loadServerPublicKey() else {
-            presentFatalConfigError("Couldn't load wireauth_server_public_key.pem from the bundle. Replace its placeholder contents with the real server key before running.")
-            return
-        }
-
-        let client = AirlanceClient(
-            eventLoopGroup: eventLoopGroup,
-            serverPublicKey: serverPublicKey,
-            host: serverHost,
-            port: serverPort
-        )
-        self.airlanceClient = client
-
-        let gitHubLoginFlow = GitHubLoginFlow(clientID: githubClientID, redirectURI: githubRedirectURI)
-
-        let loginVC = LoginViewController(client: client, gitHubLoginFlow: gitHubLoginFlow)
-        loginVC.onLoginSucceeded = { [weak self] session in
-            self?.handleLoginSucceeded(session)
-        }
-        self.loginViewController = loginVC
-
-        window.contentViewController = loginVC
-        window.makeKeyAndOrderFront(nil)
-
-        do {
-            try await client.connect()
-        } catch {
-            presentFatalConfigError("Couldn't connect to the server: \(error)")
-        }
-    }
-
-    /// Loads wireauth_server_public_key.pem, bundled the same way
-    /// test.png is (a plain resource file, not an Assets.xcassets
-    /// entry) — see RSAVerifier.loadPublicKey(pem:)'s doc comment on
-    /// why this is pinned config rather than fetched over the wire.
-    private func loadServerPublicKey() -> SecKey? {
-        guard let path = Bundle.main.path(forResource: "wireauth_server_public_key", ofType: "pem"),
-              let pem = try? String(contentsOfFile: path, encoding: .utf8)
-        else {
-            return nil
-        }
-        return try? RSAVerifier.loadPublicKey(pem: pem)
-    }
-
-    /// Session persistence (Keychain) and the transition to the
-    /// signed-in UI are intentionally not implemented here — this is
-    /// just the minimal wiring to get the GitHub/QR login flow on
-    /// screen and calling the server. See `LoginSession`'s doc comment
-    /// for what a real caller is expected to do with the result.
-    private func handleLoginSucceeded(_ session: LoginSession) {
-        print("Login succeeded: userID=\(session.userID) authKeyID=\(session.authKeyID)")
-    }
-
-    @MainActor
-    private func presentFatalConfigError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Configuration error"
-        alert.informativeText = message
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        // Insert code here to tear down your application
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return true
     }
+
 }
