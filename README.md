@@ -8,3 +8,7 @@ bazel build //:Airlance
 ```
 bazel run //:xcodeproj
 ```
+
+```
+bazel clean --expunge
+```

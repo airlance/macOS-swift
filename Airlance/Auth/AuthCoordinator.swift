@@ -1,8 +1,11 @@
 import AirlanceClient
 import Foundation
+import os
 
 /// Состояние, которое показывает окно логина в данный момент.
 enum AuthStep {
+    /// Стартовый экран: подключение и восстановление сессии ещё выполняются.
+    case loading
     /// Шаг 1: ввод email (+ имя/фамилия) или кнопка "Sign in with GitHub".
     case emailEntry
     /// Шаг 2: ввод OTP-кода, присланного на `email`. `accountID` нужен
@@ -56,6 +59,7 @@ enum AuthUIError: Error {
 /// которые View-слой дёргает из своих @IBAction/кнопок.
 @MainActor
 final class AuthCoordinator {
+    private let logger = Logger(subsystem: "com.airlance.app", category: "AuthCoordinator")
     private let client: AirlanceClient
     private let osVersion: String
     private let appVersion: String
@@ -66,7 +70,7 @@ final class AuthCoordinator {
     /// перерисовывает соответствующий экран.
     var onStepChanged: ((AuthStep) -> Void)?
 
-    private(set) var step: AuthStep = .emailEntry {
+    private(set) var step: AuthStep = .loading {
         didSet { onStepChanged?(step) }
     }
 
@@ -103,6 +107,7 @@ final class AuthCoordinator {
                 return true
             }
         } catch {
+            logger.error("Session restore failed: \(String(describing: error), privacy: .public)")
             // Молча падаем на форму логина — establishSession уже покрывает
             // ожидаемые случаи (SESSION_NOT_FOUND), остальное — сетевые
             // проблемы, которые пользователь увидит повторно при попытке войти.
@@ -116,7 +121,10 @@ final class AuthCoordinator {
     /// Шаг 1 -> запрашивает код на email. При успехе переключает UI на
     /// экран ввода OTP.
     func requestEmailCode(email: String, firstName: String, lastName: String) async throws {
-        guard let auth = client.auth else { throw AuthUIError.notConnected }
+        guard let auth = client.auth else {
+            logger.error("Email code request rejected: client is not connected")
+            throw AuthUIError.notConnected
+        }
         do {
             let accountID = try await auth.registerAccount(email: email, firstName: firstName, lastName: lastName)
             lastRegisteredEmail = email
@@ -125,6 +133,7 @@ final class AuthCoordinator {
             lastRegisteredLastName = lastName
             step = .otpEntry(email: email, accountID: accountID)
         } catch {
+            logger.error("Email code request failed: \(String(describing: error), privacy: .public)")
             throw Self.mapError(error)
         }
     }
@@ -207,7 +216,7 @@ final class AuthCoordinator {
     private static func mapError(_ error: Error) -> AuthUIError {
         if let protocolError = error as? ProtocolError {
             switch protocolError {
-            case .notConnected:
+            case .notConnected, .alreadyConnectingOrConnected:
                 return .notConnected
             case .serverError(let code, let message):
                 switch code {

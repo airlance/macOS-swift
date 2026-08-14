@@ -15,45 +15,50 @@ public struct AirlanceClientConfig {
 }
 
 /// Верхнеуровневый клиент: устанавливает TCP-соединение, проходит Noise IK
-/// handshake, дальше отдаёт `NoiseConn` протокольному слою.
+/// handshake (через `NoiseTransport`, actor), дальше отдаёт его протокольному слою.
 ///
 /// Протокольный слой (Envelope/RegisterAccount/ConfirmEmailCode и т.д. из
-/// `proto/schema.fbs`) сюда пока не добавлен — как только будет Swift-код от
-/// `flatc`, подключаем его поверх `noiseConn.writeFrame`/`readFrame`, по образцу
-/// серверных `write*Ack` функций в `internal/transport/cli/serve.go`.
+/// `proto/schema.fbs`) подключается поверх `transport.writeFrame`/`readFrame`,
+/// по образцу серверных `write*Ack` функций в `internal/transport/cli/serve.go`.
 public final class AirlanceClient {
     private let config: AirlanceClientConfig
-    private var tcpConnection: TCPConnection?
-    private(set) var noiseConn: NoiseConn?
+    // NOT an actor: facade остаётся обычным классом, чтобы синхронные геттеры
+    // (devicePublicKeyHex, deviceFingerprint) не требовали await без необходимости.
+    // Крипто-состояние изолировано внутри NoiseTransport (actor) — см. AGENTS.md §4.
+    private var transport: NoiseTransport?
     private let githubAuthCoordinator = GithubAuthCoordinator()
 
     public init(config: AirlanceClientConfig) {
         self.config = config
     }
 
-    /// Подключается и проходит Noise IK handshake. После успеха `noiseConn`
+    /// Подключается и проходит Noise IK handshake. После успеха `transport`
     /// готов для отправки/чтения зашифрованных application-фреймов.
     public func connect() async throws {
         let serverKeyBytes = try HexCodec.decode(config.serverStaticPublicKeyHex)
         let serverStaticKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: serverKeyBytes)
         let deviceKey = try DeviceIdentity.loadOrCreate()
 
-        let tcp = TCPConnection(host: config.host, port: config.port)
-        try await tcp.connect()
-        self.tcpConnection = tcp
-
-        let conn = try await NoiseIKHandshake.clientHandshake(
-            connection: tcp,
+        let transport = NoiseTransport(
+            host: config.host,
+            port: config.port,
             serverStaticPublicKey: serverStaticKey,
             clientStaticKeypair: deviceKey
         )
-        self.noiseConn = conn
+        try await transport.connect()
+        self.transport = transport
     }
 
+    /// Закрывает соединение. Не async (facade синхронный по дизайну), поэтому
+    /// фактическое закрытие сокета внутри actor-изолированного `NoiseTransport`
+    /// происходит fire-and-forget через отдельный `Task` — вызывающий код не должен
+    /// полагаться на то, что сокет закрыт немедленно к моменту возврата `close()`,
+    /// только на то, что `transport`/`auth` сразу становятся `nil` для новых вызовов.
     public func close() {
-        noiseConn?.close()
-        tcpConnection = nil
-        noiseConn = nil
+        Task { [transport] in
+            await transport?.close()
+        }
+        transport = nil
     }
 
     /// Публичный ключ устройства (device key) в hex — то, что сервер увидит как
@@ -71,11 +76,23 @@ public final class AirlanceClient {
         try DeviceIdentity.fingerprint()
     }
 
-    /// Auth-клиент (email OTP flow) поверх текущего `noiseConn`. `nil` пока
+    /// Auth-клиент (email OTP flow) поверх текущего `transport`. `nil` пока
     /// `connect()` не был вызван успешно.
     public var auth: AuthClient? {
-        guard let noiseConn else { return nil }
-        return AuthClient(noiseConn: noiseConn)
+        guard let transport else { return nil }
+        return AuthClient(noiseConn: transport)
+    }
+
+    /// Поток входящих push-событий с сервера (сообщения, обновления QR-кодов и т.д.).
+    /// Доступен после `connect()`.
+    public var incomingEvents: AsyncStream<IncomingEvent>? {
+        transport?.incomingEvents
+    }
+
+    /// Поток изменений состояния сетевого подключения.
+    /// Доступен после `connect()`.
+    public var connectionState: AsyncStream<ConnectionState>? {
+        transport?.connectionState
     }
 
     /// Единая точка входа для "уже был здесь" сценария: после `connect()`

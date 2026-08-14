@@ -11,6 +11,7 @@ final class AuthWindowController: NSWindowController {
     private let emailStep = EmailStepViewController()
     private let otpStep = OTPStepViewController()
     private let githubStep = GithubWaitingViewController()
+    private let loadingStep = LoadingViewController()
 
     /// Вызывается один раз, когда координатор перешёл в `.authenticated`.
     var onAuthenticated: ((AuthSession) -> Void)?
@@ -67,6 +68,8 @@ final class AuthWindowController: NSWindowController {
 
     private func render(_ step: AuthStep) {
         switch step {
+        case .loading:
+            window?.contentViewController = loadingStep
         case .emailEntry:
             window?.contentViewController = emailStep
         case .otpEntry(let email, _):
@@ -142,5 +145,36 @@ final class AuthWindowController: NSWindowController {
             }
             otpStep.setLoading(false)
         }
+    }
+}
+
+/// Нейтральный стартовый экран, пока клиент подключается и проверяет Keychain.
+@MainActor
+private final class LoadingViewController: NSViewController {
+    override func loadView() {
+        let view = NSView()
+
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .regular
+        spinner.isIndeterminate = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.startAnimation(nil)
+
+        let label = NSTextField(labelWithString: "Подключение к серверу…")
+        label.alignment = .center
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(spinner)
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -12),
+            label.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 12),
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        ])
+
+        self.view = view
     }
 }
