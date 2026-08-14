@@ -31,9 +31,22 @@ final class HandshakeState {
         self.staticKeypair = staticKeypair
         self.remoteStaticPublicKey = remoteStaticPublicKey
 
+        // ⚠️ DO NOT REMOVE — verified against a running Go server, see AGENTS.md §5.1.
+        // Initialize(): MixHash(prologue) — Noise spec §5.3. Прролог у нас пустой
+        // ([]), но вызов ОБЯЗАТЕЛЕН по spec (это отдельный шаг, не дубль/опечатка —
+        // предыдущая версия этого комментария ошибочно называла его лишним и убирала,
+        // что и ломало handshake: без него h не совпадает с тем, что считает сервер,
+        // с первого шага). См. flynn/noise: Config.Prologue по умолчанию nil, но
+        // MixHash(prologue) всё равно вызывается безусловно внутри NewHandshakeState.
+        // Это не гипотеза — подтверждено рантайм-прогоном handshake против реального
+        // Go-сервера (TASK_concurrency.md, Фаза 0). Если этот вызов снова покажется
+        // избыточным при ревью/рефакторинге — это не повод его убирать.
+        symmetricState.mixHash([])
+
         // Pre-message: initiator знает responder static key ("<- s" в нотации выше).
         // MixHash(rs.public_key) — как того требует Noise spec §5.3 для pre-message.
-        symmetricState.mixHash([])
+        // Эти два MixHash — РАЗНЫЕ обязательные шаги (prologue, затем pre-message
+        // static key), не должны схлопываться в один вызов.
         symmetricState.mixHash([UInt8](remoteStaticPublicKey.rawRepresentation))
     }
 
@@ -49,23 +62,18 @@ final class HandshakeState {
         let ePub = [UInt8](ephemeral.publicKey.rawRepresentation)
         message.append(contentsOf: ePub)
         symmetricState.mixHash(ePub)
-        print("DEBUG ephemeral.rawRepresentation (private):", ephemeral.rawRepresentation.map { String(format: "%02x", $0) }.joined())
-        print("DEBUG ephemeral.publicKey:", ePub.map { String(format: "%02x", $0) }.joined())
 
         // Token: es — DH(e, rs)
         let esShared = try ephemeral.sharedSecretFromKeyAgreement(with: remoteStaticPublicKey)
-        print("DEBUG esShared:", esShared.rawBytes.map { String(format: "%02x", $0) }.joined())
         symmetricState.mixKey(esShared.rawBytes)
 
         // Token: s — encrypted static key
         let sPub = [UInt8](staticKeypair.publicKey.rawRepresentation)
         let encryptedS = try symmetricState.encryptAndHash(sPub)
         message.append(contentsOf: encryptedS)
-        print("DEBUG staticKeypair.rawRepresentation (private):", staticKeypair.rawRepresentation.map { String(format: "%02x", $0) }.joined())
 
         // Token: ss — DH(s, rs)
         let ssShared = try staticKeypair.sharedSecretFromKeyAgreement(with: remoteStaticPublicKey)
-        print("DEBUG ssShared:", ssShared.rawBytes.map { String(format: "%02x", $0) }.joined())
         symmetricState.mixKey(ssShared.rawBytes)
 
         // Empty payload
@@ -111,7 +119,7 @@ final class HandshakeState {
 
     /// Split() — вызывать один раз после успешного readMessage2.
     /// Возвращает (cs1, cs2) как в Noise spec; splitByRole определяет send/recv
-    /// на стороне вызывающего кода (initiator: send=cs1, recv=cs2 — см. NoiseIKHandshake).
+    /// на стороне вызывающего кода (initiator: send=cs1, recv=cs2 — см. NoiseTransport.connect()).
     func split() -> (CipherState, CipherState) {
         symmetricState.split()
     }

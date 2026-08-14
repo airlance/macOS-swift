@@ -8,7 +8,7 @@ public struct AuthSession {
     public let currentSeq: Int64
 }
 
-/// Минимальный email OTP auth flow поверх уже установленного `NoiseConn`:
+/// Минимальный email OTP auth flow поверх уже установленного `NoiseTransport`:
 /// `RegisterAccount` -> `RegisterAccountAck` (запрашивает код на email),
 /// затем `ConfirmEmailCode` -> `ConfirmEmailCodeAck` (подтверждает код,
 /// заводит сессию и устройство).
@@ -17,10 +17,10 @@ public struct AuthSession {
 /// `gen.BodyRegisterAccount` / `gen.BodyConfirmEmailCode`, и
 /// `usecase.EmailAuthUseCase` (`RequestCode`/`ConfirmCode`).
 public final class AuthClient {
-    private let noiseConn: NoiseConn
+    private let noiseConn: NoiseTransport
     private let requestIDs = RequestIDGenerator()
 
-    init(noiseConn: NoiseConn) {
+    init(noiseConn: NoiseTransport) {
         self.noiseConn = noiseConn
     }
 
@@ -35,10 +35,7 @@ public final class AuthClient {
             firstName: firstName,
             lastName: lastName
         )
-        try await noiseConn.writeFrame(frame)
-
-        let responseFrame = try await noiseConn.readFrame()
-        let envelope = try ProtocolCodec.decodeEnvelope(responseFrame)
+        let envelope = try await noiseConn.request(frame, expecting: requestID)
         let ack = try ProtocolCodec.expectBody(envelope, as: .registeraccountack, type: Protocol__RegisterAccountAck.self)
         return ack.accountId
     }
@@ -70,10 +67,7 @@ public final class AuthClient {
             osVersion: osVersion,
             appVersion: appVersion
         )
-        try await noiseConn.writeFrame(frame)
-
-        let responseFrame = try await noiseConn.readFrame()
-        let envelope = try ProtocolCodec.decodeEnvelope(responseFrame)
+        let envelope = try await noiseConn.request(frame, expecting: requestID)
         let ack = try ProtocolCodec.expectBody(envelope, as: .confirmemailcodeack, type: Protocol__ConfirmEmailCodeAck.self)
 
         guard let sessionID = ack.sessionId else {
@@ -91,10 +85,7 @@ public final class AuthClient {
     public func resumeSession(sessionID: String) async throws -> AuthSession {
         let requestID = requestIDs.nextID()
         let frame = ProtocolCodec.encodeResumeSession(requestID: requestID, sessionID: sessionID)
-        try await noiseConn.writeFrame(frame)
-
-        let responseFrame = try await noiseConn.readFrame()
-        let envelope = try ProtocolCodec.decodeEnvelope(responseFrame)
+        let envelope = try await noiseConn.request(frame, expecting: requestID)
         let ack = try ProtocolCodec.expectBody(envelope, as: .resumesessionack, type: Protocol__ResumeSessionAck.self)
 
         guard let ackSessionID = ack.sessionId else {
@@ -118,10 +109,7 @@ public final class AuthClient {
     public func newSession(deviceID: UInt64 = 0) async throws -> AuthSession {
         let requestID = requestIDs.nextID()
         let frame = ProtocolCodec.encodeNewSession(requestID: requestID, deviceID: deviceID)
-        try await noiseConn.writeFrame(frame)
-
-        let responseFrame = try await noiseConn.readFrame()
-        let envelope = try ProtocolCodec.decodeEnvelope(responseFrame)
+        let envelope = try await noiseConn.request(frame, expecting: requestID)
         let ack = try ProtocolCodec.expectBody(envelope, as: .newsessionack, type: Protocol__NewSessionAck.self)
 
         guard let sessionID = ack.sessionId else {

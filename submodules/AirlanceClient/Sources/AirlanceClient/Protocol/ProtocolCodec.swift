@@ -8,6 +8,7 @@ public enum ProtocolError: Error, CustomStringConvertible {
     case missingBody(Protocol__Body)
     case serverError(code: Protocol__ErrorCode, message: String)
     case notConnected
+    case alreadyConnectingOrConnected
 
     public var description: String {
         switch self {
@@ -19,6 +20,8 @@ public enum ProtocolError: Error, CustomStringConvertible {
             return "airlance: server returned error \(code): \(message)"
         case .notConnected:
             return "airlance: connect() must succeed before this call"
+        case .alreadyConnectingOrConnected:
+            return "airlance: connect() called while a handshake is already in progress or connected — call close() first"
         }
     }
 }
@@ -113,6 +116,12 @@ enum ProtocolCodec {
         var builder = FlatBufferBuilder(initialSize: 64)
         let bodyOffset = Protocol__Ping.createPing(&builder, timestamp: timestamp)
         return finishEnvelope(&builder, requestID: requestID, bodyType: .ping, body: bodyOffset)
+    }
+
+    static func encodePong(requestID: UInt64, timestamp: Int64) -> [UInt8] {
+        var builder = FlatBufferBuilder(initialSize: 64)
+        let bodyOffset = Protocol__Pong.createPong(&builder, timestamp: timestamp)
+        return finishEnvelope(&builder, requestID: requestID, bodyType: .pong, body: bodyOffset)
     }
 
     private static func finishEnvelope(

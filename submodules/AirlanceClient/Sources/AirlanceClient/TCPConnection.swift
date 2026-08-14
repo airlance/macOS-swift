@@ -1,15 +1,21 @@
 import Foundation
 import Network
+import os
 
 /// Тонкая обёртка над `NWConnection` с async API `readFrame()`/`writeFrame()`,
 /// зеркало `transport.Connection` (internal/transport/connection.go) на клиенте.
 /// Осознанно без внутреннего буфера сообщений — вызывающий код (handshake, потом
 /// протокольный слой) сам решает свою модель конкуррентности, как и на сервере.
 final class TCPConnection {
+    private let logger = Logger(subsystem: "com.airlance.client", category: "TCPConnection")
+    private let host: String
+    private let port: UInt16
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "airlance.tcpconnection")
 
     init(host: String, port: UInt16) {
+        self.host = host
+        self.port = port
         let nwHost = NWEndpoint.Host(host)
         let nwPort = NWEndpoint.Port(rawValue: port)!
         // Отключаем Nagle — протокол request/response с мелкими фреймами,
@@ -21,17 +27,22 @@ final class TCPConnection {
     }
 
     func connect() async throws {
+        logger.info("TCP connect started host=\(self.host, privacy: .public) port=\(self.port, privacy: .public)")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.stateUpdateHandler = { [weak self] state in
+                self?.logger.debug("NWConnection state: \(String(describing: state), privacy: .public)")
                 switch state {
                 case .ready:
                     self?.connection.stateUpdateHandler = nil
+                    self?.logger.info("TCP connection ready")
                     continuation.resume()
                 case .failed(let error):
                     self?.connection.stateUpdateHandler = nil
+                    self?.logger.error("TCP connection failed: \(error.localizedDescription, privacy: .public)")
                     continuation.resume(throwing: error)
                 case .cancelled:
                     self?.connection.stateUpdateHandler = nil
+                    self?.logger.error("TCP connection cancelled")
                     continuation.resume(throwing: Framing.FramingError.connectionClosed)
                 default:
                     break
